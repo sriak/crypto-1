@@ -45,6 +45,7 @@ type Signature struct {
 	RSASignature         parsedMPI
 	DSASigR, DSASigS     parsedMPI
 	ECDSASigR, ECDSASigS parsedMPI
+	EdDSASigR, EdDSASigS parsedMPI
 
 	// rawSubpackets contains the unparsed subpackets, in order.
 	rawSubpackets []outputSubpacket
@@ -98,7 +99,7 @@ func (sig *Signature) parse(r io.Reader) (err error) {
 	sig.SigType = SignatureType(buf[0])
 	sig.PubKeyAlgo = PublicKeyAlgorithm(buf[1])
 	switch sig.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly, PubKeyAlgoDSA, PubKeyAlgoECDSA:
+	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly, PubKeyAlgoDSA, PubKeyAlgoECDSA, PubKeyAlgoEdDSA:
 	default:
 		err = errors.UnsupportedError("public key algorithm " + strconv.Itoa(int(sig.PubKeyAlgo)))
 		return
@@ -166,6 +167,11 @@ func (sig *Signature) parse(r io.Reader) (err error) {
 		sig.ECDSASigR.bytes, sig.ECDSASigR.bitLength, err = readMPI(r)
 		if err == nil {
 			sig.ECDSASigS.bytes, sig.ECDSASigS.bitLength, err = readMPI(r)
+		}
+	case PubKeyAlgoEdDSA:
+		sig.EdDSASigR.bytes, sig.EdDSASigR.bitLength, err = readMPI(r)
+		if err == nil {
+			sig.EdDSASigS.bytes, sig.EdDSASigS.bitLength,err = readMPI(r)
 		}
 	default:
 		panic("unreachable")
@@ -503,7 +509,18 @@ func (sig *Signature) signPrepareHash(h hash.Hash) (digest []byte, err error) {
 	copy(sig.HashTag[:], digest)
 	return
 }
+func (sig *Signature) GetSignPrepareHash(h hash.Hash) (digest []byte, err error) {
+	sig.outSubpackets = sig.buildSubpackets()
+	digest, err = sig.signPrepareHash(h)
+	return
+}
 
+func (sig *Signature) SetEddsaField(r,s []byte) {
+	sig.EdDSASigR.bytes = r
+	sig.EdDSASigR.bitLength = uint16(8 * len(sig.EdDSASigR.bytes))
+	sig.EdDSASigS.bytes = s
+	sig.EdDSASigS.bitLength = uint16(8 * len(sig.EdDSASigS.bytes))
+}
 // Sign signs a message with a private key. The hash, h, must contain
 // the hash of the message to be signed and will be mutated by this function.
 // On success, the signature is stored in sig. Call Serialize to write it out.
@@ -576,7 +593,7 @@ func unwrapECDSASig(b []byte) (r, s *big.Int, err error) {
 // Serialize to write it out.
 // If config is nil, sensible defaults will be used.
 func (sig *Signature) SignUserId(id string, pub *PublicKey, priv *PrivateKey, config *Config) error {
-	h, err := userIdSignatureHash(id, pub, sig.Hash)
+	h, err := UserIdSignatureHash(id, pub, sig.Hash)
 	if err != nil {
 		return err
 	}
@@ -600,7 +617,7 @@ func (sig *Signature) Serialize(w io.Writer) (err error) {
 	if len(sig.outSubpackets) == 0 {
 		sig.outSubpackets = sig.rawSubpackets
 	}
-	if sig.RSASignature.bytes == nil && sig.DSASigR.bytes == nil && sig.ECDSASigR.bytes == nil {
+	if sig.RSASignature.bytes == nil && sig.DSASigR.bytes == nil && sig.ECDSASigR.bytes == nil && sig.EdDSASigR.bytes == nil  {
 		return errors.InvalidArgumentError("Signature: need to call Sign, SignUserId or SignKey before Serialize")
 	}
 
@@ -614,6 +631,9 @@ func (sig *Signature) Serialize(w io.Writer) (err error) {
 	case PubKeyAlgoECDSA:
 		sigLength = 2 + len(sig.ECDSASigR.bytes)
 		sigLength += 2 + len(sig.ECDSASigS.bytes)
+	case PubKeyAlgoEdDSA:
+		sigLength = 2 + len(sig.EdDSASigR.bytes)
+		sigLength += 2 + len(sig.EdDSASigS.bytes)
 	default:
 		panic("impossible")
 	}
@@ -653,6 +673,8 @@ func (sig *Signature) Serialize(w io.Writer) (err error) {
 		err = writeMPIs(w, sig.DSASigR, sig.DSASigS)
 	case PubKeyAlgoECDSA:
 		err = writeMPIs(w, sig.ECDSASigR, sig.ECDSASigS)
+	case PubKeyAlgoEdDSA:
+		err = writeMPIs(w, sig.EdDSASigR, sig.EdDSASigS)
 	default:
 		panic("impossible")
 	}

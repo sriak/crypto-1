@@ -4,7 +4,7 @@
 
 // Package packet implements parsing and serialization of OpenPGP packets, as
 // specified in RFC 4880.
-package packet // import "golang.org/x/crypto/openpgp/packet"
+package packet
 
 import (
 	"bufio"
@@ -15,6 +15,8 @@ import (
 	"golang.org/x/crypto/openpgp/errors"
 	"io"
 	"math/big"
+	"github.com/dedis/crypto/abstract"
+	"fmt"
 )
 
 // readFull is the same as io.ReadFull except that reading zero bytes returns
@@ -380,6 +382,35 @@ func Read(r io.Reader) (p Packet, err error) {
 	return
 }
 
+func ReadEddsaPoint(r io.Reader) (*abstract.Point, error) {
+	p, err := Read(r)
+	if err != nil {
+		return nil, err
+	}
+	pk, ok := p.(*PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("failed to parse, got: %#v", p)
+	}
+	eddsaKey := pk.eddsa
+	point, err := eddsaKey.newEdDSA()
+	if err != nil {
+		return nil, err
+	}
+	return point, nil
+}
+
+func ReadKeyId(r io.Reader) (uint64, error) {
+	p, err := Read(r)
+	if err != nil {
+		return 0, err
+	}
+	pk, ok := p.(*PublicKey)
+	if !ok {
+		return 0, fmt.Errorf("failed to parse, got: %#v", p)
+	}
+	return pk.KeyId, nil
+}
+
 // SignatureType represents the different semantic meanings of an OpenPGP
 // signature. See RFC 4880, section 5.2.1.
 type SignatureType uint8
@@ -412,6 +443,8 @@ const (
 	// RFC 6637, Section 5.
 	PubKeyAlgoECDH  PublicKeyAlgorithm = 18
 	PubKeyAlgoECDSA PublicKeyAlgorithm = 19
+	//RFC 4880bis
+	PubKeyAlgoEdDSA PublicKeyAlgorithm = 22
 )
 
 // CanEncrypt returns true if it's possible to encrypt a message to a public
@@ -428,7 +461,7 @@ func (pka PublicKeyAlgorithm) CanEncrypt() bool {
 // sign a message.
 func (pka PublicKeyAlgorithm) CanSign() bool {
 	switch pka {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly, PubKeyAlgoDSA, PubKeyAlgoECDSA:
+	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly, PubKeyAlgoDSA, PubKeyAlgoECDSA, PubKeyAlgoEdDSA:
 		return true
 	}
 	return false
