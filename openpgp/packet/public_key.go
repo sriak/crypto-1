@@ -718,6 +718,10 @@ func (pk *PublicKey) VerifyKeySignature(signed *PublicKey, sig *Signature) error
 	return nil
 }
 
+func KeyRevocationHash(pk signingKey, hashFunc crypto.Hash) (h hash.Hash, err error) {
+	return keyRevocationHash(pk,hashFunc)
+}
+
 func keyRevocationHash(pk signingKey, hashFunc crypto.Hash) (h hash.Hash, err error) {
 	if !hashFunc.Available() {
 		return nil, errors.UnsupportedError("hash function")

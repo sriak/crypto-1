@@ -21,6 +21,7 @@ import (
 	"golang.org/x/crypto/openpgp/elgamal"
 	"golang.org/x/crypto/openpgp/errors"
 	"golang.org/x/crypto/openpgp/s2k"
+	"github.com/dedis/crypto/abstract"
 )
 
 // PrivateKey represents a possibly encrypted private key. See RFC 4880,
@@ -64,6 +65,13 @@ func NewECDSAPrivateKey(currentTime time.Time, priv *ecdsa.PrivateKey) *PrivateK
 	return pk
 }
 
+func NewEdDSAPrivateKey(currentTime time.Time, priv *abstract.Scalar, pub *abstract.Point) *PrivateKey {
+	pk := new(PrivateKey)
+	pk.PublicKey = *NewEdDSAPublicKey(currentTime,pub)
+	pk.PrivateKey = priv
+	return pk
+}
+
 // NewSignerPrivateKey creates a sign-only PrivateKey from a crypto.Signer that
 // implements RSA or ECDSA.
 func NewSignerPrivateKey(currentTime time.Time, signer crypto.Signer) *PrivateKey {
@@ -83,6 +91,7 @@ func NewSignerPrivateKey(currentTime time.Time, signer crypto.Signer) *PrivateKe
 
 func (pk *PrivateKey) parse(r io.Reader) (err error) {
 	err = (&pk.PublicKey).parse(r)
+
 	if err != nil {
 		return
 	}
@@ -168,6 +177,8 @@ func (pk *PrivateKey) Serialize(w io.Writer) (err error) {
 		err = serializeElGamalPrivateKey(privateKeyBuf, priv)
 	case *ecdsa.PrivateKey:
 		err = serializeECDSAPrivateKey(privateKeyBuf, priv)
+	case *abstract.Scalar:
+		err = serializeEdDSAPrivateKey(privateKeyBuf, priv)
 	default:
 		err = errors.InvalidArgumentError("unknown private key type")
 	}
@@ -229,6 +240,18 @@ func serializeElGamalPrivateKey(w io.Writer, priv *elgamal.PrivateKey) error {
 
 func serializeECDSAPrivateKey(w io.Writer, priv *ecdsa.PrivateKey) error {
 	return writeBig(w, priv.D)
+}
+
+func serializeEdDSAPrivateKey(w io.Writer, priv *abstract.Scalar) error {
+	privB, err := (*priv).MarshalBinary()
+	if err != nil {
+		return nil
+	}
+	privB = append([]byte{0x40}, privB...)
+	length := uint16(8 * len(privB) - 1)
+	w.Write([]byte{byte(length >> 8), byte(length)})
+	w.Write(privB)
+	return err
 }
 
 // Decrypt decrypts an encrypted private key using a passphrase.

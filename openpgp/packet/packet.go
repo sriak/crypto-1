@@ -15,7 +15,6 @@ import (
 	"golang.org/x/crypto/openpgp/errors"
 	"io"
 	"math/big"
-	"github.com/dedis/crypto/abstract"
 	"fmt"
 )
 
@@ -382,7 +381,9 @@ func Read(r io.Reader) (p Packet, err error) {
 	return
 }
 
-func ReadEddsaPoint(r io.Reader) (*abstract.Point, error) {
+
+
+func ReadPacket(r io.Reader) (*PublicKey, error) {
 	p, err := Read(r)
 	if err != nil {
 		return nil, err
@@ -391,24 +392,7 @@ func ReadEddsaPoint(r io.Reader) (*abstract.Point, error) {
 	if !ok {
 		return nil, fmt.Errorf("failed to parse, got: %#v", p)
 	}
-	eddsaKey := pk.eddsa
-	point, err := eddsaKey.newEdDSA()
-	if err != nil {
-		return nil, err
-	}
-	return point, nil
-}
-
-func ReadKeyId(r io.Reader) (uint64, error) {
-	p, err := Read(r)
-	if err != nil {
-		return 0, err
-	}
-	pk, ok := p.(*PublicKey)
-	if !ok {
-		return 0, fmt.Errorf("failed to parse, got: %#v", p)
-	}
-	return pk.KeyId, nil
+	return pk, nil
 }
 
 // SignatureType represents the different semantic meanings of an OpenPGP
